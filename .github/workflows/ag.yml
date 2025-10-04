@@ -1,0 +1,80 @@
+name: Argo test api Build and Push
+
+on:
+  workflow_dispatch:
+# on:
+#   push:
+#     branches:
+#       - main
+env:
+  IMAGE_NAME: ghcr.io/argo/argo-test-api
+  ACCOUNT_ID: $(aws sts get-caller-identity --query 'Account' --output text)
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout app repository
+        uses: actions/checkout@v3
+
+      # - name: Set up JDK 21
+      #   uses: actions/setup-java@v3
+      #   with:
+      #     distribution: temurin
+      #     java-version: 21
+
+      # - name: Grant execute permission to Gradle Wrapper
+      #   run: chmod +x ./gradlew
+
+      # - name: Build JAR
+      #   run: ./gradlew :app:api:bootJar
+
+      - name: Set version tag (commit SHA)
+        run: echo "TAG=${{ github.sha }}" >> $GITHUB_ENV
+
+      # AWS CLI のセットアップ
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Dockerログイン
+      - name: Log in to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+            | docker login --username AWS --password-stdin ${{ env.ACCOUNT_ID}}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+      
+      # Dockerイメージのビルド
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }}:${{ env.TAG }} -f Dockerfile .
+
+      # Dockerイメージのタグ付け
+      - name: Tag Docker image
+        run: |
+          docker tag ${{ env.IMAGE_NAME }}:${{ env.TAG }} \
+          ${{ env.ACCOUNT_ID}}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+
+      # Dockerイメージのプッシュ
+      - name: Push Docker image to Amazon ECR
+        run: |
+          docker push \
+          ${{ env.ACCOUNT_ID}}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+
+      # - name: Update deployment.yaml in manifest repo
+      #   run: |
+      #     git clone https://x-access-token:${{ secrets.PERSONAL_TOKEN }}@github.com/wuyang026/cicd-study-manifest.git
+      #     cd cicd-study-manifest/apps/cicd-study-service
+
+      #     # sed -i 's|image: ${{ env.ACCOUNT_ID}}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.IMAGE_NAME }}:.*|image: ${{ env.ACCOUNT_ID}}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.IMAGE_NAME }}:${{ env.TAG }}|' deployment.yaml
+      #     sed -i 's|\(image: .*/.*:\).*|\1${{ env.TAG }}|' deployment.yaml
+      #     git config user.name "github-actions"
+      #     git config user.email "actions@github.com"
+      #     git commit -am "Update image to ${{ env.TAG }}"
+      #     git push
