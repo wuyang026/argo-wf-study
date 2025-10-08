@@ -1,3 +1,3 @@
 FROM eclipse-temurin:21-jdk-alpine
-COPY argo-wf-study-0.0.1-SNAPSHOT.jar api.jar
+COPY argo-wf-study-0.0.1-SNAPSHOT.jar app.jar
 ENTRYPOINT ["java", "-jar", "app.jar"]
